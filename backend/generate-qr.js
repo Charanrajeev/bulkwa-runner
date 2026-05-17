@@ -1,107 +1,25 @@
 /**
  * BulkWA — WhatsApp QR Generator
- * Immediately pushes QR as base64 to a GitHub Gist so dashboard can display it in real-time
+ * Saves qr.b64 file — the workflow will git-push it so the dashboard can fetch it
  */
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const QRCode = require('qrcode');
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
 
 const EXECUTABLE_PATH = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
-const SESSION_DIR     = path.join(__dirname, '.wwebjs_auth');
-const QR_OUTPUT       = path.join(__dirname, 'qr.png');
-const QR_B64_FILE     = path.join(__dirname, 'qr.b64');
-const QR_READY_FLAG   = path.join(__dirname, 'qr.ready');
-const LOG_FILE        = path.join(__dirname, 'qr.log');
-
-// These come from GitHub Actions environment
-const GH_TOKEN  = process.env.GH_TOKEN  || '';
-const GIST_ID   = process.env.GIST_ID   || '';  // optional pre-created gist
-const REPO      = process.env.REPO      || '';
+const SESSION_DIR   = path.join(__dirname, '.wwebjs_auth');
+const QR_OUTPUT     = path.join(__dirname, 'qr.png');
+const QR_B64_FILE   = path.join(__dirname, '..', 'qr.b64');  // repo root so git can commit it
+const QR_READY_FLAG = path.join(__dirname, 'qr.ready');
+const LOG_FILE      = path.join(__dirname, 'qr.log');
 
 function log(msg) {
   const ts = new Date().toISOString();
   const line = `[${ts}] ${msg}`;
   console.log(line);
   fs.appendFileSync(LOG_FILE, line + '\n');
-}
-
-function httpsRequest(options, body) {
-  return new Promise((resolve, reject) => {
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve({ status: res.statusCode, body: data }));
-    });
-    req.on('error', reject);
-    if (body) req.write(body);
-    req.end();
-  });
-}
-
-async function pushQRToGist(b64DataUrl) {
-  if (!GH_TOKEN) { log('No GH_TOKEN — skipping Gist push'); return null; }
-
-  const content = JSON.stringify({
-    qr: b64DataUrl,
-    ts: new Date().toISOString(),
-    repo: REPO
-  });
-
-  const payload = JSON.stringify({
-    description: 'BulkWA QR Code',
-    public: false,
-    files: { 'bulkwa-qr.json': { content } }
-  });
-
-  try {
-    let result;
-    if (GIST_ID) {
-      // Update existing gist
-      result = await httpsRequest({
-        hostname: 'api.github.com',
-        path: `/gists/${GIST_ID}`,
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${GH_TOKEN}`,
-          'Accept': 'application/vnd.github+json',
-          'User-Agent': 'BulkWA',
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload)
-        }
-      }, payload);
-    } else {
-      // Create new gist
-      result = await httpsRequest({
-        hostname: 'api.github.com',
-        path: '/gists',
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${GH_TOKEN}`,
-          'Accept': 'application/vnd.github+json',
-          'User-Agent': 'BulkWA',
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload)
-        }
-      }, payload);
-    }
-
-    if (result.status === 200 || result.status === 201) {
-      const gist = JSON.parse(result.body);
-      log(`QR pushed to Gist: ${gist.id}`);
-      // Save gist ID to file so workflow step can output it
-      fs.writeFileSync(path.join(__dirname, 'gist.id'), gist.id);
-      return gist.id;
-    } else {
-      log(`Gist push failed: ${result.status} — ${result.body.slice(0,200)}`);
-      return null;
-    }
-  } catch(e) {
-    log('Gist push error: ' + e.message);
-    return null;
-  }
 }
 
 async function main() {
@@ -127,28 +45,28 @@ async function main() {
   client.on('qr', async (qr) => {
     log('QR token received from WhatsApp!');
     try {
-      // Save as PNG file
+      // Save as PNG
       await QRCode.toFile(QR_OUTPUT, qr, {
         color: { dark: '#000000', light: '#ffffff' },
         width: 300, margin: 2
       });
       log('qr.png saved');
 
-      // Save as base64 data URL for Gist/inline display
-      const b64 = await QRCode.toDataURL(qr, { width: 300, margin: 2 });
-      fs.writeFileSync(QR_B64_FILE, b64);
-      log('qr.b64 saved');
+      // Save as base64 data URL — this gets git-pushed so dashboard can fetch it
+      const b64 = await QRCode.toDataURL(qr, {
+        color: { dark: '#000000', light: '#ffffff' },
+        width: 300, margin: 2
+      });
 
-      // Write ready flag
+      // Write to repo root as qr.b64
+      fs.writeFileSync(QR_B64_FILE, b64, 'utf8');
+      log('qr.b64 written to repo root');
+
+      // Write ready flag — shell wrapper detects this and does git push
       fs.writeFileSync(QR_READY_FLAG, new Date().toISOString());
+      log('qr.ready flag written — shell will now git-push');
 
-      // Push to GitHub Gist immediately — dashboard polls this
-      const gistId = await pushQRToGist(b64);
-      if (gistId) {
-        log(`Dashboard can now fetch QR from Gist: ${gistId}`);
-      }
-
-      // Also print to terminal
+      // Print to terminal
       try { require('qrcode-terminal').generate(qr, { small: true }); } catch(e) {}
 
     } catch (err) {
@@ -156,8 +74,15 @@ async function main() {
     }
   });
 
-  client.on('authenticated', () => { log('Authenticated!'); authenticated = true; });
+  client.on('authenticated', () => {
+    log('Authenticated!');
+    authenticated = true;
+    // Clear qr.b64 after successful scan
+    try { fs.writeFileSync(QR_B64_FILE, 'scanned', 'utf8'); } catch(e) {}
+  });
+
   client.on('auth_failure', msg => { log('Auth failure: ' + msg); process.exit(1); });
+
   client.on('ready', () => {
     log('Client ready!');
     const info = client.info;
@@ -168,16 +93,9 @@ async function main() {
         connectedAt: new Date().toISOString()
       }, null, 2));
     }
-    // Clear the QR from gist now that we're connected
-    if (GH_TOKEN && fs.existsSync(path.join(__dirname,'gist.id'))) {
-      const gid = fs.readFileSync(path.join(__dirname,'gist.id'),'utf8').trim();
-      const p = JSON.stringify({ files: { 'bulkwa-qr.json': { content: JSON.stringify({status:'connected',ts:new Date().toISOString()}) } } });
-      httpsRequest({ hostname:'api.github.com', path:`/gists/${gid}`, method:'PATCH',
-        headers:{'Authorization':`Bearer ${GH_TOKEN}`,'Accept':'application/vnd.github+json','User-Agent':'BulkWA','Content-Type':'application/json','Content-Length':Buffer.byteLength(p)} }, p)
-        .catch(()=>{});
-    }
     setTimeout(() => { log('Exiting after session save.'); process.exit(0); }, 30000);
   });
+
   client.on('disconnected', r => log('Disconnected: ' + r));
 
   log('Initializing Puppeteer...');
@@ -189,8 +107,9 @@ async function main() {
     waited++;
     if (waited % 15 === 0) log(`Waiting for scan... ${waited}s`);
   }
-  if (!authenticated) { log('Scan timeout.'); process.exit(0); }
+
+  if (!authenticated) { log('Scan timeout — qr.b64 was pushed, user did not scan in time.'); process.exit(0); }
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-main().catch(err => { console.error(err); process.exit(1); });
+main().catch(err => { log('Fatal: ' + err.message); console.error(err); process.exit(1); });
