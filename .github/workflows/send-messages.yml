@@ -1,0 +1,109 @@
+name: Send WhatsApp Messages
+
+on:
+  workflow_dispatch:
+    inputs:
+      sheetId:
+        description: 'Google Sheet ID'
+        required: true
+        type: string
+      phoneCol:
+        description: 'Phone number column index (0-based)'
+        required: true
+        default: '0'
+        type: string
+      msgCol:
+        description: 'Message column index (0-based)'
+        required: true
+        default: '1'
+        type: string
+      batch:
+        description: 'Messages per batch'
+        required: true
+        default: '30'
+        type: string
+      delayMin:
+        description: 'Minimum delay between messages (seconds)'
+        required: true
+        default: '30'
+        type: string
+      delayMax:
+        description: 'Maximum delay between messages (seconds)'
+        required: true
+        default: '60'
+        type: string
+      timestamp:
+        description: 'Add timestamp to message (true/false)'
+        required: true
+        default: 'true'
+        type: string
+      startRow:
+        description: 'Starting row (for batch continuation)'
+        required: false
+        default: '1'
+        type: string
+
+jobs:
+  send-messages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 hours max
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          npm ci
+
+      - name: Install Chromium
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y chromium-browser fonts-noto-color-emoji
+
+      - name: Restore WhatsApp session
+        uses: actions/download-artifact@v4
+        with:
+          name: wa-session
+          path: backend/.wwebjs_auth/
+        continue-on-error: true
+
+      - name: Send bulk messages
+        env:
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium-browser
+          SHEET_ID: ${{ inputs.sheetId }}
+          PHONE_COL: ${{ inputs.phoneCol }}
+          MSG_COL: ${{ inputs.msgCol }}
+          BATCH_SIZE: ${{ inputs.batch }}
+          DELAY_MIN: ${{ inputs.delayMin }}
+          DELAY_MAX: ${{ inputs.delayMax }}
+          ADD_TIMESTAMP: ${{ inputs.timestamp }}
+          START_ROW: ${{ inputs.startRow }}
+        run: |
+          cd backend
+          node send-messages.js
+
+      - name: Upload delivery log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: delivery-log-${{ github.run_id }}
+          path: backend/delivery.log
+          retention-days: 30
+
+      - name: Save updated session
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wa-session
+          path: backend/.wwebjs_auth/
+          retention-days: 7
+        continue-on-error: true
