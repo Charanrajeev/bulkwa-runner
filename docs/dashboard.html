@@ -423,6 +423,7 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;dis
           <div class="form-group">
             <label>GitHub Personal Access Token</label>
             <input type="password" id="cfg-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+            <div style="font-size:0.75rem;color:var(--muted);margin-top:4px">⚠️ Token needs scopes: <code style="background:var(--surface3);padding:1px 5px;border-radius:3px">repo</code> + <code style="background:var(--surface3);padding:1px 5px;border-radius:3px">workflow</code> + <code style="background:var(--surface3);padding:1px 5px;border-radius:3px">gist</code></div>
           </div>
           <button class="btn btn-green" onclick="saveSettings()">Save Settings</button>
         </div>
@@ -643,6 +644,7 @@ function saveSettings(){
     timestamp: document.getElementById('cfg-timestamp').value,
     delayMin: document.getElementById('cfg-delay-min').value,
     delayMax: document.getElementById('cfg-delay-max').value,
+    gistId: state.settings.gistId||''
   };
   localStorage.setItem('bwa_settings_'+state.user.email, JSON.stringify(state.settings));
   toast('Settings saved!','ok');
@@ -747,188 +749,186 @@ function startQRCountdown(secs){
 }
 
 async function pollForRunId(){
-  // Find the most recent run of generate-qr workflow
   const repo = state.settings.repo;
   const token = state.settings.token;
   try {
-    const resp = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/generate-qr.yml/runs?per_page=5`,{
+    const resp = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/generate-qr.yml/runs?per_page=3`,{
       headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
     });
-    if(!resp.ok) throw new Error('API error '+resp.status);
+    if(!resp.ok) throw new Error('API '+resp.status);
     const data = await resp.json();
-    const runs = data.workflow_runs||[];
-    // Get most recent run
-    const run = runs[0];
+    const run = (data.workflow_runs||[])[0];
     if(!run){
-      addLog('[whatsapp] No runs found yet, retrying...','info');
-      qrPollTimer = setTimeout(()=>pollForRunId(), 10000);
+      qrPollAttempts++;
+      if(qrPollAttempts < QR_POLL_MAX) qrPollTimer = setTimeout(()=>pollForRunId(), 8000);
       return;
     }
     qrRunId = run.id;
-    addLog(`[whatsapp] Run found: #${run.run_number} (${run.status})`, 'info');
-    pollForArtifact();
+    addLog(`[whatsapp] Run #${run.run_number} found (${run.status})`, 'info');
+    // Now poll for Gist QR
+    pollForGistQR();
   } catch(e){
     addLog('[whatsapp] Poll error: '+e.message,'err');
     qrPollAttempts++;
-    if(qrPollAttempts < QR_POLL_MAX){
-      qrPollTimer = setTimeout(()=>pollForRunId(), 10000);
-    } else {
-      setQRState('placeholder','⏱️','<span style="color:var(--warn)">Timed out waiting for runner</span><div style="font-size:0.72rem;color:var(--muted2);margin-top:4px">Check GitHub Actions tab for errors</div>');
-    }
+    if(qrPollAttempts < QR_POLL_MAX) qrPollTimer = setTimeout(()=>pollForRunId(), 10000);
+    else setQRState('placeholder','⏱️','<span style="color:var(--warn)">Timed out. Check GitHub Actions.</span>');
   }
 }
 
-async function pollForArtifact(){
+async function pollForGistQR(){
   qrPollAttempts++;
   if(qrPollAttempts > QR_POLL_MAX){
-    setQRState('placeholder','⏱️','<span style="color:var(--warn)">Timed out. Try again.</span>');
-    toast('QR generation timed out. Try again.','err');
+    setQRState('placeholder','⏱️','<span style="color:var(--warn)">Timed out after 5 min. Try again.</span>');
+    toast('Timed out. Try Generate QR again.','err');
     return;
   }
 
   const repo = state.settings.repo;
   const token = state.settings.token;
 
-  // First check run status
   try {
+    // 1. Check run status
     const runResp = await fetch(`https://api.github.com/repos/${repo}/actions/runs/${qrRunId}`,{
       headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
     });
-    const runData = await runResp.json();
-    const status = runData.status;
-    const conclusion = runData.conclusion;
+    const run = await runResp.json();
 
-    setQRState('loading',
-      status==='queued'?'⏳ Runner queued...':status==='in_progress'?'🔄 Runner in progress...':'⏳ Waiting...',
-      `Attempt ${qrPollAttempts}/${QR_POLL_MAX} — checking every 10s`
-    );
-
-    if(conclusion==='failure'||conclusion==='cancelled'){
-      setQRState('placeholder','❌',`<span style="color:var(--danger)">Workflow ${conclusion}</span><div style="font-size:0.72rem;color:var(--muted2);margin-top:4px">Check GitHub Actions for error details</div>`);
-      addLog(`[whatsapp] Workflow ${conclusion}`,'err');
-      toast('Workflow failed. Check GitHub Actions logs.','err');
+    if(run.conclusion==='failure'||run.conclusion==='cancelled'){
+      setQRState('placeholder','❌',`<span style="color:var(--danger)">Workflow ${run.conclusion}</span><div style="font-size:0.72rem;color:var(--muted2);margin-top:6px"><a href="https://github.com/${repo}/actions/runs/${qrRunId}" target="_blank" style="color:var(--info)">View error logs →</a></div>`);
+      toast('Workflow failed. Check GitHub Actions.','err');
       return;
     }
 
-    // Try to fetch artifact (available after qr.png is uploaded mid-run or after completion)
-    const artResp = await fetch(`https://api.github.com/repos/${repo}/actions/runs/${qrRunId}/artifacts`,{
+    const statusLabel = run.status==='queued'?'⏳ Runner queued...'
+      : run.status==='in_progress'?'🔄 Puppeteer running...'
+      : '⏳ Waiting...';
+    setQRState('loading', statusLabel, `Attempt ${qrPollAttempts}/${QR_POLL_MAX} — checking every 8s`);
+
+    // 2. Try to find the Gist created by the runner
+    //    The runner creates/updates a Gist named "BulkWA QR Code"
+    const gistId = state.settings.gistId || localStorage.getItem('bwa_gist_id_'+state.user.email);
+    if(gistId){
+      const ok = await tryFetchGistQR(gistId);
+      if(ok) return;
+    }
+
+    // 3. Search user's gists for bulkwa-qr.json
+    const gistsResp = await fetch('https://api.github.com/gists?per_page=20',{
       headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
     });
-    const artData = await artResp.json();
-    const qrArtifact = (artData.artifacts||[]).find(a=>a.name==='whatsapp-qr');
+    const gists = await gistsResp.json();
+    const qrGist = Array.isArray(gists) && gists.find(g=>g.files && g.files['bulkwa-qr.json']);
 
-    if(qrArtifact){
-      addLog('[whatsapp] QR artifact found! Fetching...','ok');
-      await displayQRFromArtifact(qrArtifact.id);
-    } else {
-      // Not ready yet, keep polling
-      addLog(`[whatsapp] QR not ready yet (${status}), retrying in 10s...`,'info');
-      qrPollTimer = setTimeout(()=>pollForArtifact(), 10000);
+    if(qrGist){
+      localStorage.setItem('bwa_gist_id_'+state.user.email, qrGist.id);
+      const ok = await tryFetchGistQR(qrGist.id);
+      if(ok) return;
     }
+
+    // 4. Not ready yet — keep polling
+    addLog(`[whatsapp] QR not ready yet (${run.status}), retry in 8s...`,'info');
+    qrPollTimer = setTimeout(()=>pollForGistQR(), 8000);
+
   } catch(e){
-    addLog('[whatsapp] Artifact poll error: '+e.message,'err');
-    qrPollTimer = setTimeout(()=>pollForArtifact(), 10000);
+    addLog('[whatsapp] Poll error: '+e.message,'err');
+    qrPollTimer = setTimeout(()=>pollForGistQR(), 10000);
   }
 }
 
-async function displayQRFromArtifact(artifactId){
-  const repo = state.settings.repo;
+async function tryFetchGistQR(gistId){
   const token = state.settings.token;
-
   try {
-    // Download artifact zip via GitHub API
-    // Note: GitHub API returns a redirect to the actual zip download
-    const downloadUrl = `https://api.github.com/repos/${repo}/actions/artifacts/${artifactId}/zip`;
+    const resp = await fetch(`https://api.github.com/gists/${gistId}`,{
+      headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
+    });
+    const gist = await resp.json();
+    const fileContent = gist.files?.['bulkwa-qr.json']?.content;
+    if(!fileContent) return false;
 
-    // We can't directly unzip in browser, so we show a download button + instructions
-    // AND also try to fetch via the run's artifact download URL
-    setQRState('placeholder','✅ QR Ready!',`
-      <div style="margin-top:8px">
-        <a href="${downloadUrl}" 
-           onclick="downloadQRArtifact(event,'${downloadUrl}','${token}')"
-           style="display:inline-block;background:var(--green);color:#0a1f10;padding:8px 20px;border-radius:8px;font-weight:700;font-size:0.9rem;text-decoration:none;cursor:pointer">
-          ⬇ Download QR Code
-        </a>
-        <div style="font-size:0.72rem;color:var(--muted2);margin-top:8px">Download → unzip → scan qr.png with WhatsApp<br>QR expires in ~60 seconds after download</div>
-      </div>
-    `);
+    const data = JSON.parse(fileContent);
+    if(data.status==='connected') return false; // already scanned
 
-    // Also open the GitHub Actions run page so user can easily grab it
-    const runUrl = `https://github.com/${repo}/actions/runs/${qrRunId}`;
-    addLog(`[whatsapp] QR artifact ready! Run: ${runUrl}`,'ok');
-    toast('QR ready! Download it and scan with WhatsApp','ok');
-
-    // Show a direct link to GitHub Actions run
-    document.getElementById('qr-placeholder').innerHTML += `
-      <div style="margin-top:10px">
-        <a href="${runUrl}" target="_blank" 
-           style="font-size:0.78rem;color:var(--info);text-decoration:none">
-          🔗 Open GitHub Actions run →
-        </a>
-      </div>
-      <div style="margin-top:8px;padding:8px;background:var(--surface2);border-radius:6px;font-size:0.72rem;color:var(--muted);text-align:left">
-        <strong style="color:var(--text)">After scanning:</strong><br>
-        Come back here and click "Mark as Connected" below
-      </div>
-    `;
-
-    // Show "Mark as Connected" button
-    document.getElementById('btn-logout-wa').style.display='none';
-    document.getElementById('btn-gen-qr').textContent='Regenerate QR';
-    document.getElementById('btn-gen-qr').disabled=false;
-
-    // Add manual confirm button
-    let confirmBtn = document.getElementById('btn-confirm-scan');
-    if(!confirmBtn){
-      confirmBtn = document.createElement('button');
-      confirmBtn.id='btn-confirm-scan';
-      confirmBtn.className='btn btn-green';
-      confirmBtn.style.flex='1';
-      confirmBtn.textContent='✓ I Scanned It';
-      confirmBtn.onclick=()=>{
-        const phone = prompt('Enter your WhatsApp number (with country code, e.g. 919876543210):');
-        if(phone){
-          setWAConnected('+'+phone.replace(/\D/g,''), new Date().toISOString());
-          confirmBtn.remove();
-          updateStats();
-          toast('WhatsApp connected!','ok');
-        }
-      };
-      document.querySelector('#page-whatsapp .panel:first-child > div:last-of-type')?.appendChild(confirmBtn)
-      || document.getElementById('btn-gen-qr').parentNode.appendChild(confirmBtn);
+    if(data.qr && data.qr.startsWith('data:image')){
+      // We have the real base64 QR — display it directly!
+      displayQRInline(data.qr, gistId);
+      return true;
     }
-
+    return false;
   } catch(e){
-    addLog('[whatsapp] Error fetching QR artifact: '+e.message,'err');
-    toast('Could not auto-fetch QR. Download manually from GitHub Actions.','err');
+    return false;
   }
 }
 
-function downloadQRArtifact(e, url, token){
-  e.preventDefault();
-  // Open download with auth header — use a fetch + blob approach
-  fetch(url, {
-    headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
-  })
-  .then(r=>{
-    if(r.status===302||r.redirected){
-      window.open(r.url,'_blank');
-    } else {
-      return r.blob();
+function displayQRInline(b64DataUrl, gistId){
+  // Stop polling
+  if(qrPollTimer){ clearTimeout(qrPollTimer); qrPollTimer=null; }
+
+  const img = document.getElementById('qr-img');
+  const placeholder = document.getElementById('qr-placeholder');
+  const loading = document.getElementById('qr-loading');
+
+  // Show the real QR image directly in the white box
+  loading.style.display='none';
+  placeholder.style.display='none';
+  img.src = b64DataUrl;
+  img.style.display = 'block';
+  img.style.cursor = 'default';
+  img.style.maxWidth = '200px';
+  img.style.maxHeight = '200px';
+  img.onclick = null;
+
+  addLog('[whatsapp] ✅ Real QR displayed! Scan now with WhatsApp.','ok');
+  toast('Scan this QR with WhatsApp NOW — expires in ~60s','ok');
+
+  // Show confirm button
+  document.getElementById('btn-gen-qr').textContent='Regenerate QR';
+  document.getElementById('btn-gen-qr').disabled=false;
+
+  let confirmBtn = document.getElementById('btn-confirm-scan');
+  if(!confirmBtn){
+    confirmBtn = document.createElement('button');
+    confirmBtn.id='btn-confirm-scan';
+    confirmBtn.className='btn btn-green';
+    confirmBtn.style.cssText='flex:1;margin-top:0';
+    confirmBtn.textContent='✓ Mark as Connected';
+    confirmBtn.onclick=()=>{
+      const phone = prompt('Enter your WhatsApp number with country code\n(e.g. for India: 919876543210)');
+      if(phone){
+        setWAConnected('+'+phone.replace(/\D/g,''), new Date().toISOString());
+        // Save gist ID for future use
+        if(gistId) { state.settings.gistId=gistId; saveSettings(); }
+        confirmBtn.remove();
+        updateStats();
+        toast('WhatsApp connected! 🎉','ok');
+        // Hide QR
+        img.style.display='none';
+        placeholder.style.display='block';
+        placeholder.innerHTML='<div style="font-size:2rem;margin-bottom:8px">✅</div><div style="color:var(--green);font-weight:600">Connected!</div>';
+      }
+    };
+    document.getElementById('btn-gen-qr').insertAdjacentElement('afterend', confirmBtn);
+  }
+
+  // QR expires in ~60s — show countdown and auto-regenerate
+  let expiry = 58;
+  const countdownEl = document.createElement('div');
+  countdownEl.id='qr-expiry';
+  countdownEl.style.cssText='text-align:center;font-size:0.75rem;color:var(--warn);margin-top:6px';
+  img.insertAdjacentElement('afterend', countdownEl);
+
+  const countTick = ()=>{
+    if(!document.getElementById('qr-expiry')) return;
+    if(expiry <= 0){
+      countdownEl.textContent='QR expired — click Regenerate QR';
+      countdownEl.style.color='var(--danger)';
+      img.style.opacity='0.3';
+      return;
     }
-  })
-  .then(blob=>{
-    if(blob){
-      const a=document.createElement('a');
-      a.href=URL.createObjectURL(blob);
-      a.download='whatsapp-qr.zip';
-      a.click();
-    }
-  })
-  .catch(()=>{
-    // Fallback: open GitHub Actions page
-    window.open(`https://github.com/${state.settings.repo}/actions/runs/${qrRunId}`,'_blank');
-  });
+    countdownEl.textContent=`⏱ QR expires in ${expiry}s — scan now!`;
+    expiry--;
+    setTimeout(countTick, 1000);
+  };
+  countTick();
 }
 
 async function triggerGitHubAction(workflow, inputs){
