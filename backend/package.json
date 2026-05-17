@@ -1,0 +1,20 @@
+{
+  "name": "bulkwa-backend",
+  "version": "1.0.0",
+  "description": "WhatsApp Bulk Messenger backend using whatsapp-web.js",
+  "main": "send-messages.js",
+  "scripts": {
+    "generate-qr": "node generate-qr.js",
+    "send": "node send-messages.js"
+  },
+  "dependencies": {
+    "whatsapp-web.js": "^1.23.0",
+    "qrcode-terminal": "^0.12.0",
+    "qrcode": "^1.5.3",
+    "axios": "^1.6.0",
+    "puppeteer-core": "^21.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
