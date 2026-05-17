@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BulkWA — Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0f;--sur:#111118;--sur2:#1a1a24;--bdr:rgba(255,255,255,0.08);--txt:#f0f0f8;--mut:rgba(240,240,248,0.5);--grn:#25D366;--red:#ff5757}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
+body::before{content:'';position:fixed;top:-200px;left:-200px;width:600px;height:600px;background:radial-gradient(circle,rgba(37,211,102,0.06),transparent 70%);pointer-events:none}
+.wrap{width:100%;max-width:420px;padding:2rem;position:relative;z-index:1}
+.logo{display:flex;align-items:center;gap:10px;margin-bottom:2.5rem;justify-content:center}
+.logo-icon{width:40px;height:40px;background:var(--grn);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.logo-txt{font-family:'Syne',sans-serif;font-weight:800;font-size:1.5rem}.logo-txt span{color:var(--grn)}
+.card{background:var(--sur);border:1px solid var(--bdr);border-radius:20px;padding:2rem}
+.tabs{display:flex;background:var(--sur2);border-radius:10px;padding:4px;margin-bottom:1.75rem}
+.tab{flex:1;padding:8px;border:none;border-radius:7px;background:transparent;color:var(--mut);font-family:'DM Sans',sans-serif;font-size:.9rem;cursor:pointer;transition:.2s}
+.tab.active{background:var(--sur);color:var(--txt);border:1px solid rgba(255,255,255,.14)}
+.fg{margin-bottom:1rem}
+label{display:block;font-size:.82rem;color:var(--mut);margin-bottom:6px}
+input{width:100%;background:var(--sur2);border:1px solid var(--bdr);border-radius:10px;padding:10px 14px;color:var(--txt);font-family:'DM Sans',sans-serif;font-size:.95rem;outline:none;transition:border-color .2s}
+input:focus{border-color:var(--grn)}
+.btn-primary{width:100%;padding:11px;background:var(--grn);color:#0a1f10;border:none;border-radius:10px;font-family:'Syne',sans-serif;font-weight:700;font-size:1rem;cursor:pointer;margin-top:.5rem;transition:.2s}
+.btn-primary:hover{opacity:.9}.btn-primary:disabled{opacity:.6;cursor:not-allowed}
+.msg{font-size:.85rem;text-align:center;margin-top:.75rem;min-height:1.2em}
+.msg.err{color:var(--red)}.msg.ok{color:var(--grn)}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(10,31,16,.3);border-top-color:#0a1f10;border-radius:50%;animation:sp .6s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+#reg-form{display:none}
+.firebase-notice{margin-top:1.25rem;padding:10px 14px;background:rgba(255,169,77,.08);border:1px solid rgba(255,169,77,.2);border-radius:8px;font-size:.78rem;color:rgba(255,169,77,.9);text-align:center}
+.firebase-notice a{color:#ffa94d}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">
+    <div class="logo-icon">💬</div>
+    <div class="logo-txt">Bulk<span>WA</span></div>
+  </div>
+  <div class="card">
+    <div class="tabs">
+      <button class="tab active" id="tab-l" onclick="switchTab('l')">Login</button>
+      <button class="tab" id="tab-r" onclick="switchTab('r')">Register</button>
+    </div>
+    <div id="login-form">
+      <div class="fg"><label>Email</label><input type="email" id="l-email" placeholder="you@example.com" autocomplete="email"></div>
+      <div class="fg"><label>Password</label><input type="password" id="l-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')login()"></div>
+      <button class="btn-primary" id="btn-l" onclick="login()">Sign In</button>
+      <div class="msg" id="l-msg"></div>
+    </div>
+    <div id="reg-form">
+      <div class="fg"><label>Full Name</label><input type="text" id="r-name" placeholder="Your Name"></div>
+      <div class="fg"><label>Email</label><input type="email" id="r-email" placeholder="you@example.com" autocomplete="email"></div>
+      <div class="fg"><label>Password</label><input type="password" id="r-pass" placeholder="Min 6 characters" onkeydown="if(event.key==='Enter')register()"></div>
+      <button class="btn-primary" id="btn-r" onclick="register()">Create Account</button>
+      <div class="msg" id="r-msg"></div>
+    </div>
+  </div>
+  <div class="firebase-notice" id="fb-notice" style="display:none">
+    ⚠️ Firebase not configured. <a href="SETUP.md" target="_blank">See setup guide →</a>
+  </div>
+</div>
+
+<script type="module">
+import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import{getAuth,signInWithEmailAndPassword,createUserWithEmailAndPassword,onAuthStateChanged,updateProfile}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import{getFirestore,doc,setDoc}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  PASTE YOUR FIREBASE CONFIG HERE                         ║
+// ║  Get it from: Firebase Console → Project Settings        ║
+// ╚══════════════════════════════════════════════════════════╝
+const FB_CONFIG = {
+  apiKey:            "PASTE_API_KEY_HERE",
+  authDomain:        "PASTE_PROJECT_ID.firebaseapp.com",
+  projectId:         "PASTE_PROJECT_ID",
+  storageBucket:     "PASTE_PROJECT_ID.appspot.com",
+  messagingSenderId: "PASTE_SENDER_ID",
+  appId:             "PASTE_APP_ID"
+};
+
+// Detect unconfigured
+if(FB_CONFIG.apiKey.includes('PASTE')){
+  document.getElementById('fb-notice').style.display='block';
+}
+
+let app,auth,db;
+try{
+  app  = initializeApp(FB_CONFIG);
+  auth = getAuth(app);
+  db   = getFirestore(app);
+  onAuthStateChanged(auth,u=>{ if(u) window.location.href='dashboard.html'; });
+}catch(e){ console.error('Firebase init failed:',e); }
+
+const msg=(id,t,c)=>{const e=document.getElementById(id);e.className='msg '+c;e.textContent=t};
+const busy=(id,on,label)=>{const b=document.getElementById(id);b.disabled=on;b.innerHTML=on?`<span class="spin"></span>Please wait...`:label};
+const errMap={'auth/user-not-found':'No account with this email.','auth/wrong-password':'Incorrect password.','auth/invalid-credential':'Invalid email or password.','auth/email-already-in-use':'Email already registered.','auth/weak-password':'Password too weak.','auth/too-many-requests':'Too many attempts. Try later.'};
+
+window.switchTab=t=>{
+  document.getElementById('login-form').style.display=t==='l'?'block':'none';
+  document.getElementById('reg-form').style.display=t==='r'?'block':'none';
+  ['l','r'].forEach(x=>document.getElementById('tab-'+x).className='tab'+(x===t?' active':''));
+};
+
+window.login=async()=>{
+  const email=document.getElementById('l-email').value.trim();
+  const pass=document.getElementById('l-pass').value;
+  if(!email||!pass){msg('l-msg','Please fill all fields.','err');return;}
+  busy('btn-l',true,'Sign In');
+  try{ await signInWithEmailAndPassword(auth,email,pass); }
+  catch(e){ busy('btn-l',false,'Sign In'); msg('l-msg',errMap[e.code]||e.message,'err'); }
+};
+
+window.register=async()=>{
+  const name=document.getElementById('r-name').value.trim();
+  const email=document.getElementById('r-email').value.trim();
+  const pass=document.getElementById('r-pass').value;
+  if(!name||!email||!pass){msg('r-msg','Please fill all fields.','err');return;}
+  if(pass.length<6){msg('r-msg','Password must be 6+ characters.','err');return;}
+  busy('btn-r',true,'Create Account');
+  try{
+    const c=await createUserWithEmailAndPassword(auth,email,pass);
+    await updateProfile(c.user,{displayName:name});
+    await setDoc(doc(db,'users',c.user.uid),{name,email,createdAt:new Date().toISOString(),plan:'free',waConnected:false});
+    msg('r-msg','Account created! Signing in...','ok');
+  }catch(e){ busy('btn-r',false,'Create Account'); msg('r-msg',errMap[e.code]||e.message,'err'); }
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BulkWA — Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<!-- JSZip for unzipping GitHub artifact in browser -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{
+  --bg:#0a0a0f;--sur:#111118;--sur2:#1a1a24;--sur3:#22222e;
+  --bdr:rgba(255,255,255,0.07);--bdr2:rgba(255,255,255,0.14);
+  --txt:#f0f0f8;--mut:rgba(240,240,248,0.45);--mut2:rgba(240,240,248,0.25);
+  --grn:#25D366;--grn-d:rgba(37,211,102,0.1);--grn-b:rgba(37,211,102,0.3);
+  --acc:#7c6af7;--acc-d:rgba(124,106,247,0.12);
+  --red:#ff5757;--red-d:rgba(255,87,87,0.1);
+  --warn:#ffa94d;--warn-d:rgba(255,169,77,0.12);
+  --info:#4fc3f7;--info-d:rgba(79,195,247,0.1);
+  --sb:240px;--tb:58px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif;display:flex;min-height:100vh;overflow:hidden}
+
+/* ── SIDEBAR ── */
+.sidebar{width:var(--sb);min-width:var(--sb);height:100vh;background:var(--sur);border-right:1px solid var(--bdr);display:flex;flex-direction:column;position:fixed;left:0;top:0;z-index:100}
+.sb-logo{padding:1.25rem 1.25rem 1rem;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--bdr)}
+.sb-logo-icon{width:34px;height:34px;background:var(--grn);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.sb-logo-txt{font-family:'Syne',sans-serif;font-weight:800;font-size:1.15rem}.sb-logo-txt span{color:var(--grn)}
+.sb-nav{flex:1;padding:1rem .75rem;overflow-y:auto}
+.sb-sec{font-size:.7rem;color:var(--mut2);letter-spacing:1px;text-transform:uppercase;padding:.5rem .5rem .4rem;margin-top:.5rem}
+.ni{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:.15s;font-size:.9rem;color:var(--mut);margin-bottom:2px;border:none;background:transparent;width:100%;text-align:left}
+.ni svg{width:17px;height:17px;flex-shrink:0;opacity:.7}
+.ni:hover{background:var(--sur2);color:var(--txt)}
+.ni.active{background:var(--grn-d);color:var(--grn);border:1px solid var(--grn-b)}
+.ni.active svg{opacity:1}
+.sb-bot{padding:.75rem;border-top:1px solid var(--bdr)}
+.u-pill{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--sur2);border-radius:10px;border:1px solid var(--bdr)}
+.u-av{width:30px;height:30px;border-radius:50%;background:var(--acc-d);border:1px solid rgba(124,106,247,.3);display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:600;color:var(--acc);flex-shrink:0}
+.u-name{font-size:.82rem;font-weight:500;line-height:1.2}
+.u-role{font-size:.7rem;color:var(--mut)}
+.lo-btn{margin-left:auto;background:none;border:none;cursor:pointer;color:var(--mut);padding:3px;border-radius:5px;transition:.15s}
+.lo-btn:hover{color:var(--red)}
+
+/* ── MAIN ── */
+.main{margin-left:var(--sb);flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+.topbar{height:var(--tb);background:var(--sur);border-bottom:1px solid var(--bdr);display:flex;align-items:center;padding:0 1.5rem;gap:1rem;flex-shrink:0}
+.pg-title{font-family:'Syne',sans-serif;font-weight:700;font-size:1.05rem}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.wa-badge{display:flex;align-items:center;gap:6px;font-size:.8rem;padding:5px 12px;border-radius:20px;font-weight:500}
+.wa-badge.on{background:var(--grn-d);color:var(--grn);border:1px solid var(--grn-b)}
+.wa-badge.off{background:var(--red-d);color:var(--red);border:1px solid rgba(255,87,87,.2)}
+.wa-dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.content{flex:1;overflow-y:auto;padding:1.5rem}
+
+/* ── PAGES ── */
+.page{display:none}.page.active{display:block}
+
+/* ── PANELS ── */
+.panel{background:var(--sur);border:1px solid var(--bdr);border-radius:14px;padding:1.25rem}
+.panel-title{font-family:'Syne',sans-serif;font-weight:700;font-size:.95rem;margin-bottom:1rem;display:flex;align-items:center;gap:8px}
+.p-dot{width:8px;height:8px;border-radius:50%;background:var(--grn)}
+
+/* ── WA PAGE ── */
+.wa-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
+.qr-box{background:#fff;border-radius:12px;padding:12px;display:flex;align-items:center;justify-content:center;min-height:220px;position:relative;overflow:hidden;margin-bottom:1rem}
+.qr-box img{max-width:196px;max-height:196px;display:none;border-radius:4px}
+.qr-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:12px}
+.qr-msg-inner{text-align:center;color:#444;font-size:.85rem;padding:1rem}
+.qr-msg-inner .icon{font-size:2rem;margin-bottom:8px}
+.qr-spinner{width:32px;height:32px;border:3px solid rgba(37,211,102,.2);border-top-color:#25D366;border-radius:50%;animation:sp .7s linear infinite;margin:0 auto 10px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.btn-row{display:flex;gap:8px}
+.btn{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:.88rem;font-weight:500;transition:.15s}
+.btn-grn{background:var(--grn);color:#0a1f10}.btn-grn:hover{opacity:.88}.btn-grn:disabled{opacity:.5;cursor:not-allowed}
+.btn-red{background:var(--red-d);color:var(--red);border:1px solid rgba(255,87,87,.2)}.btn-red:hover{background:rgba(255,87,87,.2)}
+.btn-out{background:transparent;border:1px solid var(--bdr2);color:var(--txt)}.btn-out:hover{background:var(--sur2)}
+.btn-sm{padding:5px 12px;font-size:.8rem}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bdr);font-size:.88rem}
+.info-row:last-child{border:none}
+.info-lbl{color:var(--mut)}
+.wa-log{background:var(--sur2);border-radius:8px;padding:10px;height:150px;overflow-y:auto;font-size:.75rem;font-family:monospace}
+.ll{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+.ll.ok{color:var(--grn)}.ll.err{color:var(--red)}.ll.info{color:var(--info)}
+
+/* ── STATS ── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem}
+.stat{background:var(--sur);border:1px solid var(--bdr);border-radius:12px;padding:1.25rem}
+.stat-n{font-family:'Syne',sans-serif;font-size:1.8rem;font-weight:800;line-height:1}
+.stat-l{font-size:.8rem;color:var(--mut);margin-top:5px}
+.stat-t{font-size:.75rem;margin-top:4px}
+
+/* ── SHEETS ── */
+.sheet-bar{display:flex;gap:10px;margin-bottom:1.25rem}
+.sheet-bar input{flex:1;background:var(--sur2);border:1px solid var(--bdr);border-radius:8px;padding:9px 14px;color:var(--txt);font-family:'DM Sans',sans-serif;font-size:.9rem;outline:none}
+.sheet-bar input:focus{border-color:var(--grn)}
+.sc{background:var(--sur);border:1px solid var(--bdr);border-radius:12px;padding:1rem 1.25rem;margin-bottom:10px;transition:border-color .15s}
+.sc:hover{border-color:var(--bdr2)}
+.sc-top{display:flex;align-items:center;justify-content:space-between}
+.sc-name{font-weight:600;font-size:.95rem}
+.sc-meta{font-size:.78rem;color:var(--mut);margin-top:3px}
+.sc-cfg{margin-top:12px;padding-top:12px;border-top:1px solid var(--bdr);display:none}
+.sc-cfg.open{display:block}
+.cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.cfg-g label{display:block;font-size:.78rem;color:var(--mut);margin-bottom:5px}
+.cfg-g select,.cfg-g input{width:100%;background:var(--sur2);border:1px solid var(--bdr);border-radius:7px;padding:7px 10px;color:var(--txt);font-size:.85rem;font-family:'DM Sans',sans-serif;outline:none}
+.cfg-g select:focus,.cfg-g input:focus{border-color:var(--grn)}
+.delay-row{display:flex;align-items:center;gap:8px;font-size:.85rem}
+.delay-row span{color:var(--mut);white-space:nowrap}
+.delay-row input{width:70px}
+
+/* ── SCHEDULE ── */
+.sched{background:var(--sur);border:1px solid var(--bdr);border-radius:12px;padding:1rem 1.25rem;margin-bottom:10px}
+.sched-top{display:flex;align-items:center;justify-content:space-between}
+.badge{font-size:.72rem;padding:3px 9px;border-radius:20px;font-weight:600}
+.badge-pending{background:var(--warn-d);color:var(--warn);border:1px solid rgba(255,169,77,.2)}
+.badge-running{background:var(--grn-d);color:var(--grn);border:1px solid var(--grn-b)}
+.badge-done{background:var(--sur2);color:var(--mut);border:1px solid var(--bdr)}
+.badge-failed{background:var(--red-d);color:var(--red)}
+.prog{height:4px;background:var(--sur3);border-radius:2px;margin-top:8px;overflow:hidden}
+.prog-fill{height:100%;background:var(--grn);transition:width .5s}
+
+/* ── MODAL ── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:999;backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:.2s}
+.overlay.open{opacity:1;pointer-events:all}
+.modal{background:var(--sur);border:1px solid var(--bdr2);border-radius:18px;width:90%;max-width:520px;max-height:90vh;overflow-y:auto;padding:1.75rem;transform:scale(.96);transition:.2s}
+.overlay.open .modal{transform:scale(1)}
+.modal-title{font-family:'Syne',sans-serif;font-weight:700;font-size:1.1rem;margin-bottom:1.25rem;display:flex;justify-content:space-between;align-items:center}
+.modal-close{background:none;border:none;color:var(--mut);cursor:pointer;font-size:1.1rem;padding:2px;transition:.15s}
+.modal-close:hover{color:var(--txt)}
+.fg{margin-bottom:1rem}
+.fg label{display:block;font-size:.82rem;color:var(--mut);margin-bottom:5px}
+.fg input,.fg select,.fg textarea{width:100%;background:var(--sur2);border:1px solid var(--bdr);border-radius:8px;padding:9px 13px;color:var(--txt);font-family:'DM Sans',sans-serif;font-size:.9rem;outline:none}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--grn)}
+.fg textarea{resize:vertical;min-height:80px}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:1.25rem}
+.sheets-sel{max-height:180px;overflow-y:auto;border:1px solid var(--bdr);border-radius:8px;background:var(--sur2)}
+.sh-opt{padding:9px 13px;cursor:pointer;font-size:.88rem;transition:background .1s;border-bottom:1px solid var(--bdr)}
+.sh-opt:last-child{border:none}
+.sh-opt:hover{background:var(--sur3)}
+.sh-opt.sel{color:var(--grn)}
+.radio-row{display:flex;gap:16px}
+.radio-row label{display:flex;align-items:center;gap:6px;color:var(--txt);font-size:.88rem;cursor:pointer}
+
+/* ── TOAST ── */
+.toast-wrap{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--sur);border:1px solid var(--bdr2);border-radius:10px;padding:10px 16px;font-size:.85rem;min-width:220px;display:flex;align-items:center;gap:10px;animation:tIn .2s ease}
+.toast.ok{border-left:3px solid var(--grn)}.toast.err{border-left:3px solid var(--red)}.toast.info{border-left:3px solid var(--info)}
+@keyframes tIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+
+/* ── SETTINGS ── */
+.settings-wrap{max-width:540px}
+.hint{font-size:.75rem;color:var(--mut);margin-top:4px}
+.hint code{background:var(--sur3);padding:1px 5px;border-radius:3px;font-size:.72rem}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--sur3);border-radius:2px}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">💬</div>
+    <div class="sb-logo-txt">Bulk<span>WA</span></div>
+  </div>
+  <nav class="sb-nav">
+    <div class="sb-sec">Main</div>
+    <button class="ni active" data-page="overview" onclick="nav(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Overview
+    </button>
+    <button class="ni" data-page="whatsapp" onclick="nav(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>WhatsApp
+    </button>
+    <div class="sb-sec">Messaging</div>
+    <button class="ni" data-page="sheets" onclick="nav(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>Google Sheets
+    </button>
+    <button class="ni" data-page="schedule" onclick="nav(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Schedules
+    </button>
+    <div class="sb-sec">Account</div>
+    <button class="ni" data-page="logs" onclick="nav(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg>Logs
+    </button>
+    <button class="ni" data-page="settings" onclick="nav(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings
+    </button>
+  </nav>
+  <div class="sb-bot">
+    <div class="u-pill">
+      <div class="u-av" id="u-av">?</div>
+      <div><div class="u-name" id="u-name">Loading...</div><div class="u-role">Free Plan</div></div>
+      <button class="lo-btn" title="Logout" onclick="doLogout()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+  <div class="topbar">
+    <div class="pg-title" id="pg-title">Overview</div>
+    <div class="tb-right">
+      <div class="wa-badge off" id="wa-badge"><div class="wa-dot"></div><span id="wa-badge-txt">WA Disconnected</span></div>
+      <button class="btn btn-grn btn-sm" onclick="nav(document.querySelector('[data-page=schedule]'));openSchedModal()">+ Schedule</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- OVERVIEW -->
+    <div class="page active" id="page-overview">
+      <div class="stats-grid">
+        <div class="stat"><div class="stat-n" id="st-sent">0</div><div class="stat-l">Messages Sent</div><div class="stat-t" style="color:var(--grn)" id="st-sent-t">0 today</div></div>
+        <div class="stat"><div class="stat-n" id="st-sched">0</div><div class="stat-l">Schedules</div><div class="stat-t" style="color:var(--mut)" id="st-sched-t">0 active</div></div>
+        <div class="stat"><div class="stat-n" id="st-sheets">0</div><div class="stat-l">Sheets Connected</div><div class="stat-t" style="color:var(--mut)">Google Sheets</div></div>
+        <div class="stat"><div class="stat-n" id="st-failed">0</div><div class="stat-l">Failed</div><div class="stat-t" style="color:var(--red)">0 today</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
+        <div class="panel">
+          <div class="panel-title"><div class="p-dot"></div>Quick Actions</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button class="btn btn-grn" style="width:100%;text-align:left;padding:10px 14px" onclick="nav(document.querySelector('[data-page=whatsapp]'))">📱 Connect WhatsApp</button>
+            <button class="btn btn-out" style="width:100%;text-align:left;padding:10px 14px" onclick="nav(document.querySelector('[data-page=sheets]'))">📊 Add Google Sheet</button>
+            <button class="btn btn-out" style="width:100%;text-align:left;padding:10px 14px" onclick="nav(document.querySelector('[data-page=schedule]'));openSchedModal()">📅 Schedule Campaign</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title"><div class="p-dot" style="background:var(--acc)"></div>Firebase Status</div>
+          <div class="info-row"><span class="info-lbl">Database</span><span id="fb-status" style="color:var(--grn);font-size:.85rem">Connecting...</span></div>
+          <div class="info-row"><span class="info-lbl">User UID</span><span id="fb-uid" style="font-size:.75rem;color:var(--mut);word-break:break-all">—</span></div>
+          <div class="info-row"><span class="info-lbl">WA Session</span><span id="fb-wa-status" style="font-size:.85rem;color:var(--mut)">—</span></div>
+          <div class="info-row"><span class="info-lbl">Last Saved</span><span id="fb-saved" style="font-size:.8rem;color:var(--mut)">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- WHATSAPP -->
+    <div class="page" id="page-whatsapp">
+      <div class="wa-grid">
+        <div class="panel">
+          <div class="panel-title"><div class="p-dot"></div>WhatsApp QR Login</div>
+          <div class="qr-box" id="qr-box">
+            <img id="qr-img" alt="QR Code">
+            <div class="qr-msg" id="qr-msg">
+              <div class="qr-msg-inner">
+                <div class="icon">📱</div>
+                <div>Click "Generate QR" to connect</div>
+                <div style="font-size:.72rem;color:#999;margin-top:4px">Opens WhatsApp Web on GitHub runner</div>
+              </div>
+            </div>
+          </div>
+          <div id="qr-timer" style="text-align:center;font-size:.78rem;color:var(--warn);margin-bottom:8px;font-weight:500;min-height:1.2em"></div>
+          <div class="btn-row" id="qr-btn-row">
+            <button class="btn btn-grn" style="flex:1" id="btn-genqr" onclick="generateQR()">Generate QR</button>
+            <button class="btn btn-red btn-sm" id="btn-wa-logout" style="display:none" onclick="waLogout()">Logout WA</button>
+          </div>
+          <div id="btn-confirm-wrap" style="display:none;margin-top:8px">
+            <button class="btn btn-grn" style="width:100%" onclick="confirmScan()">✓ I Scanned It — Mark Connected</button>
+          </div>
+          <div style="margin-top:8px;font-size:.75rem;color:var(--mut);text-align:center">Session stays alive even after you logout of BulkWA</div>
+        </div>
+        <div class="panel">
+          <div class="panel-title"><div class="p-dot" style="background:var(--info)"></div>Connection Info</div>
+          <div class="info-row"><span class="info-lbl">Status</span><span id="wa-info-status">Disconnected</span></div>
+          <div class="info-row"><span class="info-lbl">Phone</span><span id="wa-info-phone">—</span></div>
+          <div class="info-row"><span class="info-lbl">Connected Since</span><span id="wa-info-since">—</span></div>
+          <div class="info-row"><span class="info-lbl">GitHub Repo</span><span><a href="#" onclick="nav(document.querySelector('[data-page=settings]'))" style="color:var(--grn);font-size:.85rem">Configure →</a></span></div>
+          <div style="margin-top:1rem">
+            <div class="panel-title" style="font-size:.85rem;margin-bottom:.5rem"><div class="p-dot" style="background:var(--warn)"></div>Activity Log</div>
+            <div class="wa-log" id="wa-log"><div class="ll info">[system] BulkWA started</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SHEETS -->
+    <div class="page" id="page-sheets">
+      <div class="sheet-bar">
+        <input type="text" id="sheet-url" placeholder="Paste Google Sheets URL (sharing: Anyone with link)">
+        <button class="btn btn-grn" onclick="addSheet()">＋ Add Sheet</button>
+      </div>
+      <div id="sheets-list"><div style="text-align:center;padding:3rem;color:var(--mut)"><div style="font-size:2.5rem;margin-bottom:10px">📊</div><div>No sheets yet. Paste a URL above.</div></div></div>
+    </div>
+
+    <!-- SCHEDULE -->
+    <div class="page" id="page-schedule">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+        <div style="font-size:.85rem;color:var(--mut)" id="sched-summary">No schedules yet</div>
+        <button class="btn btn-grn btn-sm" onclick="openSchedModal()">+ New Schedule</button>
+      </div>
+      <div id="schedules-list"><div style="text-align:center;padding:3rem;color:var(--mut)"><div style="font-size:2.5rem;margin-bottom:10px">📅</div><div>No schedules yet.</div></div></div>
+    </div>
+
+    <!-- LOGS -->
+    <div class="page" id="page-logs">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <div style="font-size:.85rem;color:var(--mut)">All delivery logs</div>
+        <button class="btn btn-out btn-sm" onclick="clearLogs()">Clear</button>
+      </div>
+      <div class="panel"><div id="logs-wrap" style="font-size:.78rem;font-family:monospace;max-height:70vh;overflow-y:auto"><div style="color:var(--mut);padding:2rem;text-align:center">No logs.</div></div></div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="page" id="page-settings">
+      <div class="settings-wrap">
+        <div class="panel" style="margin-bottom:1rem">
+          <div class="panel-title"><div class="p-dot" style="background:var(--acc)"></div>GitHub Integration</div>
+          <div class="fg"><label>GitHub Repository (username/repo)</label><input type="text" id="cfg-repo" placeholder="yourname/bulkwa-runner"></div>
+          <div class="fg">
+            <label>GitHub Personal Access Token</label>
+            <input type="password" id="cfg-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+            <div class="hint">Token needs scopes: <code>repo</code> <code>workflow</code></div>
+          </div>
+          <button class="btn btn-grn" onclick="saveSettings()">Save Settings</button>
+        </div>
+        <div class="panel" style="margin-bottom:1rem">
+          <div class="panel-title"><div class="p-dot" style="background:var(--info)"></div>Google Apps Script</div>
+          <div style="font-size:.83rem;color:var(--mut);margin-bottom:12px">Deploy trigger.gs as a Web App. <a href="#" onclick="showGASModal()" style="color:var(--grn)">View setup guide →</a></div>
+          <div class="fg"><label>Apps Script Webhook URL</label><input type="text" id="cfg-gas" placeholder="https://script.google.com/macros/s/xxx/exec"></div>
+          <button class="btn btn-out" onclick="saveSettings()">Save</button>
+        </div>
+        <div class="panel">
+          <div class="panel-title"><div class="p-dot" style="background:var(--warn)"></div>Message Defaults</div>
+          <div class="cfg-grid">
+            <div class="cfg-g"><label>Default Batch Size</label>
+              <select id="cfg-batch"><option value="20">20</option><option value="30" selected>30</option><option value="50">50</option></select></div>
+            <div class="cfg-g"><label>Add Timestamp</label>
+              <select id="cfg-ts"><option value="yes" selected>Yes</option><option value="no">No</option></select></div>
+          </div>
+          <div class="fg"><label>Delay Range (seconds)</label>
+            <div class="delay-row"><span>Min</span><input type="number" id="cfg-dmin" value="30" min="5" max="300" style="width:70px"><span>Max</span><input type="number" id="cfg-dmax" value="60" min="5" max="300" style="width:70px"><span>sec between messages</span></div>
+          </div>
+          <button class="btn btn-out" onclick="saveSettings()">Save Defaults</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- SCHEDULE MODAL -->
+<div class="overlay" id="sched-modal">
+  <div class="modal">
+    <div class="modal-title">Schedule Campaign<button class="modal-close" onclick="closeModal('sched-modal')">✕</button></div>
+    <div class="fg"><label>Campaign Name</label><input type="text" id="sm-name" placeholder="e.g. June Promotion"></div>
+    <div class="fg"><label>Select Sheet</label><div class="sheets-sel" id="sm-sheets"><div style="padding:10px;color:var(--mut);font-size:.85rem">Add sheets first.</div></div></div>
+    <div class="cfg-grid" style="margin-top:10px">
+      <div class="cfg-g"><label>Phone Column</label><select id="sm-phone"></select></div>
+      <div class="cfg-g"><label>Message Column</label><select id="sm-msg"></select></div>
+      <div class="cfg-g"><label>Batch Size</label><select id="sm-batch"><option value="20">20</option><option value="30" selected>30</option><option value="50">50</option><option value="100">100</option></select></div>
+      <div class="cfg-g"><label>Timestamp?</label><select id="sm-ts"><option value="yes" selected>Yes</option><option value="no">No</option></select></div>
+    </div>
+    <div class="fg"><label>Delay</label><div class="delay-row"><span>Min</span><input type="number" id="sm-dmin" value="30"><span>Max</span><input type="number" id="sm-dmax" value="60"><span>seconds</span></div></div>
+    <div class="fg"><label>When</label><div class="radio-row"><label><input type="radio" name="sm-when" value="now" checked onchange="toggleDT(this)"> Send Now</label><label><input type="radio" name="sm-when" value="later" onchange="toggleDT(this)"> Schedule Later</label></div></div>
+    <div class="fg" id="sm-dt-wrap" style="display:none"><label>Date & Time</label><input type="datetime-local" id="sm-dt"></div>
+    <div class="modal-actions"><button class="btn btn-out" onclick="closeModal('sched-modal')">Cancel</button><button class="btn btn-grn" onclick="createSched()">Schedule</button></div>
+  </div>
+</div>
+
+<!-- GAS MODAL -->
+<div class="overlay" id="gas-modal">
+  <div class="modal">
+    <div class="modal-title">Google Apps Script Setup<button class="modal-close" onclick="closeModal('gas-modal')">✕</button></div>
+    <div style="font-size:.85rem;line-height:1.8;color:var(--mut)">
+      <ol style="padding-left:1.2rem">
+        <li>Go to <a href="https://script.google.com" target="_blank" style="color:var(--grn)">script.google.com</a> → New Project</li>
+        <li>Paste <strong style="color:var(--txt)">gas/trigger.gs</strong> from this project</li>
+        <li>Fill in <code style="background:var(--sur3);padding:2px 6px;border-radius:3px">GITHUB_TOKEN</code> and <code style="background:var(--sur3);padding:2px 6px;border-radius:3px">GITHUB_REPO</code></li>
+        <li>Deploy → New Deployment → Web App → Execute as Me → Access: Anyone</li>
+        <li>Copy Web App URL → paste in Settings above</li>
+        <li>Add Trigger: <strong style="color:var(--txt)">checkAndTrigger</strong> → Time-driven → Every 5 minutes</li>
+      </ol>
+    </div>
+    <div class="modal-actions"><button class="btn btn-grn" onclick="closeModal('gas-modal')">Got it</button></div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<!-- Firebase + App Logic -->
+<script type="module">
+import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import{getAuth,onAuthStateChanged,signOut}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import{getFirestore,doc,getDoc,setDoc,updateDoc,collection,getDocs,addDoc,deleteDoc,onSnapshot,serverTimestamp}
+  from'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  SAME FIREBASE CONFIG AS index.html                      ║
+// ╚══════════════════════════════════════════════════════════╝
+const FB_CONFIG = {
+  apiKey:            "PASTE_API_KEY_HERE",
+  authDomain:        "PASTE_PROJECT_ID.firebaseapp.com",
+  projectId:         "PASTE_PROJECT_ID",
+  storageBucket:     "PASTE_PROJECT_ID.appspot.com",
+  messagingSenderId: "PASTE_SENDER_ID",
+  appId:             "PASTE_APP_ID"
+};
+
+const app  = initializeApp(FB_CONFIG);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+// ── Global state ─────────────────────────────────────────
+let UID      = null;
+let CFG      = {};   // settings
+let SHEETS   = [];
+let SCHEDS   = [];
+let LOGS     = [];
+let WA_ON    = false;
+
+// ── Auth guard ───────────────────────────────────────────
+onAuthStateChanged(auth, async user => {
+  if(!user){ window.location.href='index.html'; return; }
+  UID = user.uid;
+  document.getElementById('u-name').textContent = user.displayName||user.email;
+  document.getElementById('u-av').textContent   = (user.displayName||user.email).slice(0,2).toUpperCase();
+  document.getElementById('fb-uid').textContent = UID.slice(0,16)+'...';
+  document.getElementById('fb-status').textContent = '✓ Connected';
+  await loadAll();
+  listenWASession();
+});
+
+// ── Load all user data from Firestore ────────────────────
+async function loadAll(){
+  await loadSettings();
+  await loadSheets();
+  await loadScheds();
+  await loadLogs();
+  updateStats();
+}
+
+// ── Settings ─────────────────────────────────────────────
+async function loadSettings(){
+  const snap = await getDoc(doc(db,'users',UID,'private','settings'));
+  CFG = snap.exists() ? snap.data() : {};
+  document.getElementById('cfg-repo').value  = CFG.repo||'';
+  document.getElementById('cfg-token').value = CFG.token||'';
+  document.getElementById('cfg-gas').value   = CFG.gasUrl||'';
+  if(CFG.batch) document.getElementById('cfg-batch').value = CFG.batch;
+  if(CFG.ts)    document.getElementById('cfg-ts').value    = CFG.ts;
+  if(CFG.dmin)  document.getElementById('cfg-dmin').value  = CFG.dmin;
+  if(CFG.dmax)  document.getElementById('cfg-dmax').value  = CFG.dmax;
+}
+
+window.saveSettings = async () => {
+  CFG = {
+    repo:   document.getElementById('cfg-repo').value.trim(),
+    token:  document.getElementById('cfg-token').value.trim(),
+    gasUrl: document.getElementById('cfg-gas').value.trim(),
+    batch:  document.getElementById('cfg-batch').value,
+    ts:     document.getElementById('cfg-ts').value,
+    dmin:   document.getElementById('cfg-dmin').value,
+    dmax:   document.getElementById('cfg-dmax').value,
+  };
+  await setDoc(doc(db,'users',UID,'private','settings'), CFG);
+  toast('Settings saved!','ok');
+};
+
+// ── Sheets ───────────────────────────────────────────────
+async function loadSheets(){
+  const snap = await getDocs(collection(db,'users',UID,'sheets'));
+  SHEETS = snap.docs.map(d=>({...d.data(), _id:d.id}));
+  renderSheets();
+}
+
+window.addSheet = async () => {
+  const url   = document.getElementById('sheet-url').value.trim();
+  if(!url){ toast('Paste a Google Sheets URL','err'); return; }
+  const match = url.match(/\/d\/([\w-]+)/);
+  if(!match){ toast('Invalid Google Sheets URL','err'); return; }
+  const sid = match[1];
+  if(SHEETS.find(s=>s.sid===sid)){ toast('Sheet already added','err'); return; }
+  toast('Fetching sheet columns...','info');
+  try{
+    const r = await fetch(`https://docs.google.com/spreadsheets/d/${sid}/gviz/tq?tqx=out:json&tq=SELECT%20*%20LIMIT%201`);
+    const t = await r.text();
+    const j = JSON.parse(t.substring(47).slice(0,-2));
+    const cols = j.table.cols.map((c,i)=>({label:c.label||('Col '+(i+1)),idx:i}));
+    const sheet = { sid, url, name:'Sheet — '+sid.slice(0,8)+'...', cols, phoneCol:0, msgCol:1, batch:30, ts:true, dmin:30, dmax:60, added:new Date().toISOString() };
+    const ref = await addDoc(collection(db,'users',UID,'sheets'), sheet);
+    sheet._id = ref.id;
+    SHEETS.push(sheet);
+    renderSheets(); updateStats();
+    document.getElementById('sheet-url').value='';
+    toast('Sheet added!','ok');
+    wlog('[sheets] Added: '+sid.slice(0,8),'ok');
+  }catch(e){ toast('Failed to fetch sheet. Check sharing settings.','err'); }
+};
+
+function renderSheets(){
+  const c = document.getElementById('sheets-list');
+  if(!SHEETS.length){ c.innerHTML='<div style="text-align:center;padding:3rem;color:var(--mut)"><div style="font-size:2.5rem;margin-bottom:10px">📊</div><div>No sheets yet.</div></div>'; return; }
+  c.innerHTML = SHEETS.map((s,i)=>`
+    <div class="sc" id="sc-${i}">
+      <div class="sc-top">
+        <div><div class="sc-name">${esc(s.name)}</div><div class="sc-meta">ID: ${s.sid.slice(0,12)}... | Added ${new Date(s.added).toLocaleDateString()}</div></div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-out btn-sm" onclick="toggleCfg(${i})">⚙ Config</button>
+          <button class="btn btn-red btn-sm" onclick="delSheet('${s._id}',${i})">Delete</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-grn btn-sm" onclick="sendFromSheet(${i})">▶ Send Now</button>
+        <a href="https://docs.google.com/spreadsheets/d/${s.sid}" target="_blank" class="btn btn-out btn-sm">Open ↗</a>
+      </div>
+      <div class="sc-cfg" id="scfg-${i}">
+        <div class="cfg-grid">
+          <div class="cfg-g"><label>Phone Column</label><select id="scp-${i}" onchange="saveSCfg(${i})">${s.cols.map((c,ci)=>`<option value="${ci}" ${ci===s.phoneCol?'selected':''}>${c.label}</option>`).join('')}</select></div>
+          <div class="cfg-g"><label>Message Column</label><select id="scm-${i}" onchange="saveSCfg(${i})">${s.cols.map((c,ci)=>`<option value="${ci}" ${ci===s.msgCol?'selected':''}>${c.label}</option>`).join('')}</select></div>
+          <div class="cfg-g"><label>Batch</label><select id="scb-${i}" onchange="saveSCfg(${i})"><option value="20" ${s.batch==20?'selected':''}>20</option><option value="30" ${s.batch==30?'selected':''}>30</option><option value="50" ${s.batch==50?'selected':''}>50</option></select></div>
+          <div class="cfg-g"><label>Timestamp</label><select id="sct-${i}" onchange="saveSCfg(${i})"><option value="true" ${s.ts?'selected':''}>Yes</option><option value="false" ${!s.ts?'selected':''}>No</option></select></div>
+        </div>
+        <div><label style="font-size:.78rem;color:var(--mut);display:block;margin-bottom:5px">Delay</label>
+        <div class="delay-row"><span>Min</span><input type="number" id="scd1-${i}" value="${s.dmin}" onchange="saveSCfg(${i})" style="width:70px"><span>Max</span><input type="number" id="scd2-${i}" value="${s.dmax}" onchange="saveSCfg(${i})" style="width:70px"><span>sec</span></div></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+window.toggleCfg = i => document.getElementById('scfg-'+i).classList.toggle('open');
+
+window.saveSCfg = async i => {
+  const s = SHEETS[i];
+  s.phoneCol = parseInt(document.getElementById('scp-'+i).value);
+  s.msgCol   = parseInt(document.getElementById('scm-'+i).value);
+  s.batch    = parseInt(document.getElementById('scb-'+i).value);
+  s.ts       = document.getElementById('sct-'+i).value==='true';
+  s.dmin     = parseInt(document.getElementById('scd1-'+i).value);
+  s.dmax     = parseInt(document.getElementById('scd2-'+i).value);
+  const {_id,...data} = s;
+  await setDoc(doc(db,'users',UID,'sheets',_id), data);
+  toast('Config saved','ok');
+};
+
+window.delSheet = async (id,i) => {
+  if(!confirm('Delete this sheet?')) return;
+  await deleteDoc(doc(db,'users',UID,'sheets',id));
+  SHEETS.splice(i,1); renderSheets(); updateStats();
+  toast('Sheet deleted','info');
+};
+
+window.sendFromSheet = async i => {
+  const s = SHEETS[i];
+  if(!WA_ON){ toast('Connect WhatsApp first!','err'); return; }
+  wlog(`[send] Triggering batch from ${s.sid.slice(0,8)} batch:${s.batch} delay:${s.dmin}-${s.dmax}s`,'info');
+  const ok = await ghAction('send-messages',{sheetId:s.sid,phoneCol:String(s.phoneCol),msgCol:String(s.msgCol),batch:String(s.batch),delayMin:String(s.dmin),delayMax:String(s.dmax),timestamp:String(s.ts)});
+  if(ok) toast('Send job dispatched!','ok'); else toast('Dispatch failed — check Settings','err');
+};
+
+// ── Schedules ────────────────────────────────────────────
+async function loadScheds(){
+  const snap = await getDocs(collection(db,'users',UID,'schedules'));
+  SCHEDS = snap.docs.map(d=>({...d.data(),_id:d.id}));
+  renderScheds();
+}
+
+window.openSchedModal = () => {
+  populateSchedSheets();
+  document.getElementById('sched-modal').classList.add('open');
+};
+
+function populateSchedSheets(){
+  const c  = document.getElementById('sm-sheets');
+  const pc = document.getElementById('sm-phone');
+  const mc = document.getElementById('sm-msg');
+  if(!SHEETS.length){ c.innerHTML='<div style="padding:10px;color:var(--mut);font-size:.85rem">No sheets. Add one first.</div>'; pc.innerHTML=mc.innerHTML='<option>—</option>'; return; }
+  c.innerHTML = SHEETS.map((s,i)=>`<div class="sh-opt" onclick="pickSchedSheet(${i},this)">${esc(s.name)}</div>`).join('');
+  c.dataset.sel='0';
+  pickSchedSheet(0, c.firstChild);
+}
+
+window.pickSchedSheet = (i,el) => {
+  document.querySelectorAll('.sh-opt').forEach(o=>o.classList.remove('sel'));
+  el.classList.add('sel');
+  document.getElementById('sm-sheets').dataset.sel=i;
+  const s=SHEETS[i];
+  const pc=document.getElementById('sm-phone'); const mc=document.getElementById('sm-msg');
+  pc.innerHTML=mc.innerHTML=s.cols.map((c,ci)=>`<option value="${ci}">${c.label}</option>`).join('');
+  pc.value=s.phoneCol; mc.value=s.msgCol;
+};
+
+window.toggleDT = el => { document.getElementById('sm-dt-wrap').style.display=el.value==='later'?'block':'none'; };
+
+window.createSched = async () => {
+  const name = document.getElementById('sm-name').value.trim();
+  const when = document.querySelector('input[name="sm-when"]:checked').value;
+  const si   = document.getElementById('sm-sheets').dataset.sel;
+  if(!name){ toast('Enter a campaign name','err'); return; }
+  if(si===undefined){ toast('Select a sheet','err'); return; }
+  const s  = SHEETS[si];
+  const dt = when==='later'?document.getElementById('sm-dt').value:'';
+  if(when==='later'&&!dt){ toast('Pick a date/time','err'); return; }
+  const sched = { name, sheetId:s.sid, sheetName:s.name, sheetDocId:s._id,
+    phoneCol:document.getElementById('sm-phone').value, msgCol:document.getElementById('sm-msg').value,
+    batch:document.getElementById('sm-batch').value, ts:document.getElementById('sm-ts').value,
+    dmin:document.getElementById('sm-dmin').value, dmax:document.getElementById('sm-dmax').value,
+    when, scheduledAt:dt||null, status:when==='now'?'running':'pending',
+    created:new Date().toISOString(), sent:0, total:0 };
+  const ref = await addDoc(collection(db,'users',UID,'schedules'), sched);
+  sched._id = ref.id;
+  SCHEDS.unshift(sched); renderScheds(); updateStats();
+  closeModal('sched-modal');
+  if(when==='now') triggerSched(sched);
+  else toast(`Scheduled for ${new Date(dt).toLocaleString()}`,'ok');
+};
+
+async function triggerSched(s){
+  const ok = await ghAction('send-messages',{sheetId:s.sheetId,phoneCol:s.phoneCol,msgCol:s.msgCol,batch:s.batch,delayMin:s.dmin,delayMax:s.dmax,timestamp:s.ts});
+  if(ok){ wlog(`[sched] "${s.name}" dispatched!`,'ok'); toast('Campaign dispatched!','ok'); }
+  else{ await updateDoc(doc(db,'users',UID,'schedules',s._id),{status:'failed'}); s.status='failed'; renderScheds(); toast('Dispatch failed','err'); }
+}
+
+function renderScheds(){
+  const c=document.getElementById('schedules-list');
+  document.getElementById('sched-summary').textContent = SCHEDS.length?`${SCHEDS.length} total, ${SCHEDS.filter(s=>s.status==='pending'||s.status==='running').length} active`:'No schedules';
+  if(!SCHEDS.length){ c.innerHTML='<div style="text-align:center;padding:3rem;color:var(--mut)"><div style="font-size:2.5rem;margin-bottom:10px">📅</div><div>No schedules yet.</div></div>'; return; }
+  c.innerHTML=SCHEDS.map((s,i)=>`
+    <div class="sched">
+      <div class="sched-top">
+        <div><div style="font-weight:600;font-size:.9rem">${esc(s.name)}</div>
+          <div style="font-size:.78rem;color:var(--mut);margin-top:3px">${s.scheduledAt?'Scheduled: '+new Date(s.scheduledAt).toLocaleString():'Immediate'} | ${esc(s.sheetName)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="badge badge-${s.status}">${s.status}</span>
+          <button class="btn btn-red btn-sm" onclick="delSched('${s._id}',${i})">✕</button>
+        </div>
+      </div>
+      <div style="font-size:.78rem;color:var(--mut);margin-top:6px">Batch:${s.batch} | Delay:${s.dmin}–${s.dmax}s | TS:${s.ts==='yes'?'Yes':'No'}</div>
+      ${s.status==='running'?'<div class="prog"><div class="prog-fill" style="width:15%"></div></div>':''}
+    </div>
+  `).join('');
+}
+
+window.delSched = async(id,i) => { if(!confirm('Delete?'))return; await deleteDoc(doc(db,'users',UID,'schedules',id)); SCHEDS.splice(i,1); renderScheds(); updateStats(); };
+
+// ── Logs ─────────────────────────────────────────────────
+async function loadLogs(){
+  const snap = await getDoc(doc(db,'users',UID,'private','logs'));
+  LOGS = snap.exists() ? (snap.data().entries||[]) : [];
+  renderLogs();
+}
+async function saveLogs(){ await setDoc(doc(db,'users',UID,'private','logs'),{entries:LOGS.slice(0,300)}); }
+
+function wlog(msg,type='info'){
+  const ts=new Date().toLocaleTimeString();
+  LOGS.unshift({msg,type,ts});
+  if(LOGS.length>300) LOGS=LOGS.slice(0,300);
+  saveLogs();
+  const el=document.getElementById('wa-log');
+  const d=document.createElement('div'); d.className='ll '+type;
+  d.textContent=`[${ts}] ${msg}`; el.prepend(d);
+  renderLogs();
+}
+
+function renderLogs(){
+  const c=document.getElementById('logs-wrap');
+  if(!LOGS.length){ c.innerHTML='<div style="color:var(--mut);padding:2rem;text-align:center">No logs.</div>'; return; }
+  c.innerHTML=LOGS.map(l=>`<div style="padding:3px 0;border-bottom:1px solid rgba(255,255,255,.03);color:${l.type==='ok'?'var(--grn)':l.type==='err'?'var(--red)':'var(--info)'}">[${l.ts}] ${esc(l.msg)}</div>`).join('');
+}
+
+window.clearLogs=async()=>{ LOGS=[]; await saveLogs(); renderLogs(); toast('Logs cleared','info'); };
+
+// ── WA Session (Firestore realtime listener) ──────────────
+function listenWASession(){
+  // Realtime listener on user's WA session doc
+  onSnapshot(doc(db,'users',UID,'private','wa_session'), snap => {
+    const d = snap.exists()?snap.data():null;
+    if(d && d.connected){
+      WA_ON=true;
+      setWABadge(true);
+      document.getElementById('wa-info-status').innerHTML='<span style="color:var(--grn)">✓ Connected</span>';
+      document.getElementById('wa-info-phone').textContent  = d.phone||'—';
+      document.getElementById('wa-info-since').textContent  = d.since?new Date(d.since).toLocaleString():'—';
+      document.getElementById('btn-wa-logout').style.display='inline-block';
+      document.getElementById('fb-wa-status').textContent   = '✓ '+d.phone;
+      document.getElementById('fb-wa-status').style.color   = 'var(--grn)';
+      document.getElementById('fb-saved').textContent       = d.since?new Date(d.since).toLocaleString():'—';
+    } else {
+      WA_ON=false;
+      setWABadge(false);
+      document.getElementById('wa-info-status').textContent='Disconnected';
+      document.getElementById('wa-info-phone').textContent='—';
+      document.getElementById('wa-info-since').textContent='—';
+      document.getElementById('btn-wa-logout').style.display='none';
+      document.getElementById('fb-wa-status').textContent='Disconnected';
+      document.getElementById('fb-wa-status').style.color='var(--mut)';
+    }
+    updateStats();
+  });
+}
+
+function setWABadge(on){
+  const b=document.getElementById('wa-badge');
+  b.className='wa-badge '+(on?'on':'off');
+  document.getElementById('wa-badge-txt').textContent=on?'WA Connected':'WA Disconnected';
+}
+
+async function saveWASession(phone){
+  await setDoc(doc(db,'users',UID,'private','wa_session'),{connected:true,phone,since:new Date().toISOString(),updatedAt:serverTimestamp()});
+}
+
+async function clearWASession(){
+  await setDoc(doc(db,'users',UID,'private','wa_session'),{connected:false,updatedAt:serverTimestamp()});
+}
+
+// ── QR ENGINE ────────────────────────────────────────────
+let qrTimer=null, qrRunId=null, qrAttempts=0;
+const QR_MAX=45;
+
+function qrShowSpinner(line1,line2){
+  document.getElementById('qr-img').style.display='none';
+  const m=document.getElementById('qr-msg');
+  m.style.display='flex';
+  m.innerHTML=`<div class="qr-msg-inner"><div class="qr-spinner"></div><div style="font-size:.85rem;font-weight:500">${line1}</div><div style="font-size:.72rem;color:#888;margin-top:4px">${line2||''}</div></div>`;
+  document.getElementById('btn-genqr').disabled=true;
+  document.getElementById('btn-confirm-wrap').style.display='none';
+  document.getElementById('qr-timer').textContent='';
+}
+
+function qrShowError(line1,line2){
+  document.getElementById('qr-img').style.display='none';
+  const m=document.getElementById('qr-msg');
+  m.style.display='flex';
+  m.innerHTML=`<div class="qr-msg-inner"><div class="icon">❌</div><div style="color:#ff5757;font-size:.85rem">${line1}</div><div style="font-size:.72rem;color:#888;margin-top:6px">${line2||''}</div></div>`;
+  document.getElementById('btn-genqr').disabled=false;
+  document.getElementById('btn-genqr').textContent='Retry Generate QR';
+  document.getElementById('btn-confirm-wrap').style.display='none';
+  document.getElementById('qr-timer').textContent='';
+}
+
+function qrShowImage(src){
+  if(qrTimer){ clearTimeout(qrTimer); qrTimer=null; }
+  const img=document.getElementById('qr-img');
+  const msg=document.getElementById('qr-msg');
+  img.onload=()=>{
+    msg.style.display='none';
+    img.style.display='block';
+    document.getElementById('btn-genqr').disabled=false;
+    document.getElementById('btn-genqr').textContent='Regenerate QR';
+    document.getElementById('btn-confirm-wrap').style.display='block';
+    toast('✅ REAL WhatsApp QR — SCAN NOW!','ok');
+    wlog('[whatsapp] Real QR displayed. Scan within 60 seconds.','ok');
+    startQRCountdown();
+  };
+  img.onerror=()=>{ toast('Image failed to render — trying fallback','err'); };
+  img.src=src;
+}
+
+function startQRCountdown(){
+  let s=58;
+  const t=document.getElementById('qr-timer');
+  const img=document.getElementById('qr-img');
+  const tick=()=>{
+    if(!t) return;
+    if(s<=0){ t.style.color='var(--red)'; t.textContent='⚠ QR expired — click Regenerate QR'; img.style.opacity='.25'; return; }
+    t.style.color='var(--warn)'; t.textContent=`⏱ Scan now — expires in ${s}s`; s--;
+    setTimeout(tick,1000);
+  };
+  tick();
+}
+
+window.generateQR=async()=>{
+  if(!CFG.repo||!CFG.token){ qrShowError('GitHub not configured','Go to Settings → add repo and token'); toast('Configure GitHub in Settings first','err'); return; }
+  if(qrTimer){ clearTimeout(qrTimer); qrTimer=null; }
+  qrRunId=null; qrAttempts=0;
+  qrShowSpinner('Triggering GitHub Actions...','Runner boots in ~30 seconds');
+  wlog('[whatsapp] Dispatching generate-qr workflow...','info');
+  const ok=await ghAction('generate-qr',{action:'qr'});
+  if(!ok){ qrShowError('Failed to trigger workflow','Check repo name and token in Settings'); toast('Trigger failed — check Settings','err'); return; }
+  wlog('[whatsapp] Workflow dispatched ✓ — waiting for runner...','info');
+  toast('Workflow started! Polling for QR...','info');
+  // Boot countdown
+  let cd=30;
+  const bootTick=()=>{
+    qrShowSpinner(`Runner booting... (${cd}s)`,`Attempt ${qrAttempts}/${QR_MAX} — GitHub runner takes ~30s`);
+    if(cd<=0){ findRunId(); return; }
+    cd--; qrTimer=setTimeout(bootTick,1000);
+  };
+  bootTick();
+};
+
+async function findRunId(){
+  try{
+    const d=await ghFetch(`https://api.github.com/repos/${CFG.repo}/actions/workflows/generate-qr.yml/runs?per_page=3&event=workflow_dispatch`);
+    const run=(d.workflow_runs||[])[0];
+    if(!run){ qrAttempts++; if(qrAttempts<QR_MAX){ qrTimer=setTimeout(findRunId,6000); } else qrShowError('No run found','Check GitHub Actions tab'); return; }
+    qrRunId=run.id;
+    wlog(`[whatsapp] Run #${run.run_number} (${run.status})...`,'info');
+    qrAttempts=0;
+    pollArtifact();
+  }catch(e){ wlog('[whatsapp] findRunId error: '+e.message,'err'); qrAttempts++; if(qrAttempts<QR_MAX) qrTimer=setTimeout(findRunId,8000); }
+}
+
+async function pollArtifact(){
+  qrAttempts++;
+  if(qrAttempts>QR_MAX){ qrShowError('Timed out after 5 min','Try Generate QR again'); return; }
+  try{
+    const run=await ghFetch(`https://api.github.com/repos/${CFG.repo}/actions/runs/${qrRunId}`);
+    const con=run.conclusion;
+    if(con==='failure'||con==='cancelled'){ qrShowError(`Workflow ${con}`,`<a href="https://github.com/${CFG.repo}/actions/runs/${qrRunId}" target="_blank" style="color:var(--info)">View logs →</a>`); toast('Workflow failed','err'); return; }
+    const lbl=run.status==='queued'?'Runner queued...':run.status==='in_progress'?'Puppeteer opening WhatsApp Web...':'Waiting...';
+    qrShowSpinner(lbl,`Poll ${qrAttempts}/${QR_MAX} — every 8s`);
+
+    const artData=await ghFetch(`https://api.github.com/repos/${CFG.repo}/actions/runs/${qrRunId}/artifacts`);
+    const art=(artData.artifacts||[]).find(a=>a.name==='whatsapp-qr');
+    if(!art){ wlog(`[whatsapp] Artifact not ready (${run.status}) — retry in 8s`,'info'); qrTimer=setTimeout(pollArtifact,8000); return; }
+
+    wlog('[whatsapp] ✅ Artifact found! Downloading...','ok');
+    qrShowSpinner('Downloading QR artifact...','Extracting image from zip');
+    await extractAndShowQR(art.id);
+  }catch(e){ wlog('[whatsapp] pollArtifact error: '+e.message,'err'); qrTimer=setTimeout(pollArtifact,8000); }
+}
+
+async function extractAndShowQR(artId){
+  try{
+    // Step 1: get redirect URL from GitHub API
+    const apiUrl=`https://api.github.com/repos/${CFG.repo}/actions/artifacts/${artId}/zip`;
+    const r1=await fetch(apiUrl,{headers:{'Authorization':'Bearer '+CFG.token,'Accept':'application/vnd.github+json'}});
+
+    // GitHub returns 302 redirect. fetch() follows it automatically (mode: follow is default)
+    // The final response should be the zip binary
+    if(!r1.ok){ throw new Error('Download HTTP '+r1.status+' — '+r1.statusText); }
+
+    const zipBuf=await r1.arrayBuffer();
+    wlog('[whatsapp] Zip downloaded ('+Math.round(zipBuf.byteLength/1024)+'KB)','info');
+
+    if(!window.JSZip){ throw new Error('JSZip library not loaded — check CDN'); }
+    const zip=await window.JSZip.loadAsync(zipBuf);
+
+    // Find png file inside zip
+    let pngFile=zip.file('qr.png');
+    if(!pngFile){
+      const keys=Object.keys(zip.files);
+      wlog('[whatsapp] zip contents: '+keys.join(', '),'info');
+      pngFile=zip.file(keys.find(k=>/\.png$/i.test(k)));
+    }
+    if(!pngFile){ throw new Error('qr.png not found in zip. Files: '+Object.keys(zip.files).join(',')); }
+
+    const pngBlob=await pngFile.async('blob');
+    wlog('[whatsapp] PNG extracted ('+Math.round(pngBlob.size/1024)+'KB)','ok');
+    const url=URL.createObjectURL(pngBlob);
+    qrShowImage(url);
+  }catch(e){
+    wlog('[whatsapp] extractAndShowQR failed: '+e.message,'err');
+    // Fallback: show direct GitHub link
+    qrShowError('Auto-display failed: '+e.message.slice(0,60),
+      `<a href="https://github.com/${CFG.repo}/actions/runs/${qrRunId}" target="_blank" style="color:var(--info);display:inline-block;margin-top:6px">📥 Open GitHub Actions → Download artifact manually →</a>`);
+    toast('Auto-display failed — open GitHub Actions manually','err');
+  }
+}
+
+window.confirmScan=async()=>{
+  const phone=prompt('Enter your WhatsApp number with country code\n(India example: 919876543210)\nDo NOT add + sign');
+  if(!phone) return;
+  const clean=phone.replace(/\D/g,'');
+  await saveWASession('+'+clean);
+  document.getElementById('btn-confirm-wrap').style.display='none';
+  document.getElementById('qr-img').style.display='none';
+  document.getElementById('qr-timer').textContent='';
+  document.getElementById('qr-msg').style.display='flex';
+  document.getElementById('qr-msg').innerHTML='<div class="qr-msg-inner"><div class="icon">✅</div><div style="color:#25D366;font-weight:600">Connected!</div></div>';
+  toast('WhatsApp connected! 🎉','ok');
+  wlog('[whatsapp] Connected: +'+clean,'ok');
+  updateStats();
+};
+
+window.waLogout=async()=>{
+  if(!confirm('Disconnect WhatsApp from runner? App session stays. Continue?')) return;
+  await clearWASession();
+  document.getElementById('qr-msg').style.display='flex';
+  document.getElementById('qr-msg').innerHTML='<div class="qr-msg-inner"><div class="icon">📱</div><div>Click "Generate QR" to connect</div></div>';
+  document.getElementById('qr-img').style.display='none';
+  document.getElementById('btn-genqr').textContent='Generate QR';
+  document.getElementById('qr-timer').textContent='';
+  wlog('[whatsapp] Disconnected manually.','err');
+  toast('WhatsApp disconnected','info');
+};
+
+// ── GitHub helpers ────────────────────────────────────────
+async function ghFetch(url){
+  const r=await fetch(url,{headers:{'Authorization':'Bearer '+CFG.token,'Accept':'application/vnd.github+json'}});
+  if(!r.ok) throw new Error('GitHub API '+r.status+' on '+url);
+  return r.json();
+}
+
+async function ghAction(workflow,inputs){
+  try{
+    const r=await fetch(`https://api.github.com/repos/${CFG.repo}/actions/workflows/${workflow}.yml/dispatches`,{
+      method:'POST',headers:{'Authorization':'Bearer '+CFG.token,'Accept':'application/vnd.github+json','Content-Type':'application/json'},
+      body:JSON.stringify({ref:'main',inputs})
+    });
+    return r.status===204;
+  }catch(e){ return false; }
+}
+
+// ── Stats ─────────────────────────────────────────────────
+function updateStats(){
+  document.getElementById('st-sheets').textContent=SHEETS.length;
+  document.getElementById('st-sched').textContent=SCHEDS.length;
+  document.getElementById('st-sched-t').textContent=SCHEDS.filter(s=>s.status==='pending'||s.status==='running').length+' active';
+  const sent=SCHEDS.reduce((a,s)=>a+(s.sent||0),0);
+  document.getElementById('st-sent').textContent=sent;
+  document.getElementById('st-failed').textContent=SCHEDS.filter(s=>s.status==='failed').length;
+}
+
+// ── Navigation ────────────────────────────────────────────
+window.nav=btn=>{
+  const pg=btn.dataset.page;
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+pg).classList.add('active');
+  btn.classList.add('active');
+  const titles={overview:'Overview',whatsapp:'WhatsApp',sheets:'Google Sheets',schedule:'Schedules',logs:'Delivery Logs',settings:'Settings'};
+  document.getElementById('pg-title').textContent=titles[pg]||pg;
+  if(pg==='schedule') populateSchedSheets();
+};
+
+// ── Modals ────────────────────────────────────────────────
+window.closeModal=id=>document.getElementById(id).classList.remove('open');
+window.showGASModal=()=>document.getElementById('gas-modal').classList.add('open');
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open')}));
+
+// ── Logout ────────────────────────────────────────────────
+window.doLogout=async()=>{
+  if(!confirm('Logout of BulkWA? WhatsApp session stays active.')) return;
+  await signOut(auth);
+  window.location.href='index.html';
+};
+
+// ── Utils ─────────────────────────────────────────────────
+window.toast=(msg,type='info')=>{
+  const w=document.getElementById('toast-wrap');
+  const e=document.createElement('div');
+  e.className='toast '+type;
+  e.innerHTML=(type==='ok'?'✓':type==='err'?'✕':'ℹ')+' <span>'+esc(msg)+'</span>';
+  w.appendChild(e); setTimeout(()=>e.remove(),3500);
+};
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>
