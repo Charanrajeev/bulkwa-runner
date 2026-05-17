@@ -1,0 +1,103 @@
+name: WhatsApp QR Generator
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'qr'
+
+jobs:
+  generate-qr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: cd backend && npm install
+
+      - name: Install Chromium
+        run: sudo apt-get update -qq && sudo apt-get install -y chromium-browser fonts-noto-color-emoji
+
+      - name: Restore WhatsApp session
+        uses: actions/download-artifact@v4
+        with:
+          name: wa-session
+          path: backend/.wwebjs_auth/
+        continue-on-error: true
+
+      - name: Generate QR
+        env:
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium-browser
+        run: |
+          cd backend
+          # Run node in background
+          node generate-qr.js &
+          NODE_PID=$!
+
+          # Wait up to 120s for qr.ready flag (written by node when QR is saved)
+          echo "Waiting for qr.ready flag..."
+          WAITED=0
+          while [ ! -f qr.ready ] && [ $WAITED -lt 120 ]; do
+            sleep 3
+            WAITED=$((WAITED+3))
+            echo "  ...${WAITED}s"
+          done
+
+          if [ -f qr.ready ]; then
+            echo "✅ qr.ready detected — QR is saved"
+            ls -la qr.png qr.ready 2>/dev/null || true
+          else
+            echo "⚠ qr.ready not detected after 120s"
+            cat qr.log 2>/dev/null || true
+          fi
+
+          # Continue waiting for node (scan attempt or timeout)
+          wait $NODE_PID || true
+          echo "Node finished"
+          ls -la . 2>/dev/null
+
+      # Upload QR IMMEDIATELY after node writes it
+      - name: Upload QR artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: whatsapp-qr
+          path: backend/qr.png
+          retention-days: 1
+          overwrite: true
+
+      - name: Upload log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qr-log
+          path: backend/qr.log
+          retention-days: 3
+          overwrite: true
+
+      - name: Save session
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wa-session
+          path: backend/.wwebjs_auth/
+          retention-days: 7
+          overwrite: true
+
+      - name: Save WA info
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wa-info
+          path: backend/wa-info.json
+          retention-days: 7
+          overwrite: true
+        continue-on-error: true
