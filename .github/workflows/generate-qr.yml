@@ -1,0 +1,57 @@
+name: WhatsApp QR Generator
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'qr'
+        type: string
+
+jobs:
+  generate-qr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          npm install
+
+      - name: Install Chromium for Puppeteer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser
+
+      - name: Generate WhatsApp QR Code
+        env:
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium-browser
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+        run: |
+          cd backend
+          node generate-qr.js
+
+      - name: Upload QR Code artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: whatsapp-qr
+          path: backend/qr.png
+          retention-days: 1
+
+      - name: Save session data
+        uses: actions/upload-artifact@v4
+        with:
+          name: wa-session
+          path: backend/.wwebjs_auth/
+          retention-days: 7
+        continue-on-error: true
