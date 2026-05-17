@@ -28,30 +28,58 @@ jobs:
           cd backend
           npm install
 
-      - name: Install Chromium for Puppeteer
+      - name: Install Chromium
         run: |
-          sudo apt-get update
-          sudo apt-get install -y chromium-browser
+          sudo apt-get update -qq
+          sudo apt-get install -y chromium-browser fonts-noto-color-emoji
+
+      - name: Restore previous WhatsApp session
+        uses: actions/download-artifact@v4
+        with:
+          name: wa-session
+          path: backend/.wwebjs_auth/
+        continue-on-error: true
 
       - name: Generate WhatsApp QR Code
         env:
           PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium-browser
-          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
         run: |
           cd backend
           node generate-qr.js
 
       - name: Upload QR Code artifact
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: whatsapp-qr
           path: backend/qr.png
           retention-days: 1
+          overwrite: true
 
-      - name: Save session data
+      - name: Upload QR log
         uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qr-log
+          path: backend/qr.log
+          retention-days: 3
+          overwrite: true
+
+      - name: Save WhatsApp session
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: wa-session
           path: backend/.wwebjs_auth/
           retention-days: 7
+          overwrite: true
+
+      - name: Save WA info
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wa-info
+          path: backend/wa-info.json
+          retention-days: 7
+          overwrite: true
         continue-on-error: true
