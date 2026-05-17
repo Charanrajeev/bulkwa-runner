@@ -1,7 +1,7 @@
 /**
  * BulkWA — WhatsApp QR Generator
  * Saves qr.b64 file — the workflow will git-push it so the dashboard can fetch it
- */
+ */ 
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const QRCode = require('qrcode');
