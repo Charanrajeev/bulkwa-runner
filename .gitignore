@@ -1,0 +1,16 @@
+# Dependencies
+backend/node_modules/
+backend/.wwebjs_cache/
+
+# WhatsApp session (stored as artifact, not in repo)
+backend/.wwebjs_auth/
+
+# Logs (stored as artifact)
+backend/*.log
+backend/qr.png
+backend/qr.ready
+backend/gist.id
+backend/wa-info.json
+
+# qr.b64 is intentionally NOT ignored — the runner pushes it here
+# so the dashboard can fetch it via raw.githubusercontent.com
