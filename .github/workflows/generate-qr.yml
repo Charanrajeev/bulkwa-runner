@@ -8,6 +8,11 @@ on:
         required: true
         default: 'qr'
         type: string
+      gist_id:
+        description: 'GitHub Gist ID to update with QR (optional)'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   generate-qr:
@@ -24,30 +29,39 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: |
-          cd backend
-          npm install
+        run: cd backend && npm install
 
       - name: Install Chromium
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y chromium-browser fonts-noto-color-emoji
 
-      - name: Restore previous WhatsApp session
+      - name: Restore WhatsApp session
         uses: actions/download-artifact@v4
         with:
           name: wa-session
           path: backend/.wwebjs_auth/
         continue-on-error: true
 
-      - name: Generate WhatsApp QR Code
+      - name: Generate QR and push to Gist
         env:
           PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium-browser
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIST_ID: ${{ inputs.gist_id }}
+          REPO: ${{ github.repository }}
         run: |
           cd backend
           node generate-qr.js
 
-      - name: Upload QR Code artifact
+      - name: Output Gist ID
+        if: always()
+        run: |
+          if [ -f backend/gist.id ]; then
+            echo "GIST_ID=$(cat backend/gist.id)" >> $GITHUB_OUTPUT
+            echo "QR Gist ID: $(cat backend/gist.id)"
+          fi
+
+      - name: Upload QR artifact (backup)
         uses: actions/upload-artifact@v4
         if: always()
         with:
